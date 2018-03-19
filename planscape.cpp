@@ -105,7 +105,8 @@ void __wrap__outNode(StringInfo str, const void *obj)
     if (str->data[str->len - 1] == '}' && str->data[str->len - 2] != '{') {
         // An object: append id attribute (pointer) 
         str->data[--str->len] = '\0';
-        if (IsA(obj, Path)) {
+
+        if (nodeTag(obj) >= T_Path && nodeTag(obj) <= T_LimitPath) {
 
             // Path stock output function omits some crucial bits.
             auto *p = reinterpret_cast<const Path *>(obj);
