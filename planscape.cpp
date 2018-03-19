@@ -220,12 +220,12 @@ void __wrap__add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 
 RelOptInfo *__wrap__build_simple_rel(PlannerInfo *root,
                                      int relid,
-                                     RelOptKind reloptkind)
+                                     BuildSimpleRelParam3 param3)
 {
     if (!ic)
-        return __real__build_simple_rel(root, relid, reloptkind);
+        return __real__build_simple_rel(root, relid, param3);
 
-    auto p = __real__build_simple_rel(root, relid, reloptkind);
+    auto p = __real__build_simple_rel(root, relid, param3);
     capture_object(root);
     auto &relinfo = capture_object(p);
     relinfo.parent = root;
@@ -310,20 +310,39 @@ static Node *remove_planscape_options_from_explain_stmt(Node *parsetree,
     return reinterpret_cast<Node *>(explain_copy);
 }
 
-static void process_utility(Node *parsetree,
+#if PG_VERSION_NUM >= 100000
+#define QUERY_ENVIRONMENT_PARAM(arg, _) arg,
+#else
+#define QUERY_ENVIRONMENT_PARAM(arg, _)
+#endif
+
+static void process_utility(
+#if PG_VERSION_NUM >= 100000
+                            PlannedStmt *parsetree,
+#else
+                            Node *parsetree,
+#endif
                             const char *queryString,
                             ProcessUtilityContext context,
                             ParamListInfo paramListInfo,
+    QUERY_ENVIRONMENT_PARAM(QueryEnvironment *queryEnvironment,)
                             DestReceiver *destReceiver,
                             char *completionTag)
 {
-    if (IsA(parsetree, ExplainStmt)) {
+    bool enable_planscape;
 
-        bool enable_planscape;
+#if PG_VERSION_NUM >= 100000
+    if (IsA(parsetree->utilityStmt, ExplainStmt)) {
+
+        parsetree->utilityStmt = remove_planscape_options_from_explain_stmt(
+                parsetree->utilityStmt, &enable_planscape);
+#else
+    if (IsA(parsetree, ExplainStmt)) {
 
         parsetree = remove_planscape_options_from_explain_stmt(
                 parsetree, &enable_planscape);
 
+#endif
         // Create new IC
         std::unique_ptr<InstrumentationContext> icontext;
 
@@ -349,6 +368,7 @@ static void process_utility(Node *parsetree,
                                       queryString,
                                       context,
                                       paramListInfo,
+              QUERY_ENVIRONMENT_PARAM(queryEnvironment,)
                                       destReceiver,
                                       completionTag);
 
@@ -371,10 +391,13 @@ static void process_utility(Node *parsetree,
                                   queryString,
                                   context,
                                   paramListInfo,
+          QUERY_ENVIRONMENT_PARAM(queryEnvironment,)
                                   destReceiver,
                                   completionTag);
     }
 }
+
+#undef QUERY_ENVIRONMENT_PARAM
 
 void _PG_init()
 {

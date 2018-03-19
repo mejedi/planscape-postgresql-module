@@ -14,13 +14,19 @@ void __real__add_path(RelOptInfo *parent_rel, Path *new_path);
 void __wrap__add_partial_path(RelOptInfo *parent_rel, Path *new_path);
 void __real__add_partial_path(RelOptInfo *parent_rel, Path *new_path);
 
+#if PG_VERSION_NUM >= 100000
+typedef RelOptInfo *BuildSimpleRelParam3;
+#else
+typedef RelOptKind BuildSimpleRelParam3;
+#endif
+
 RelOptInfo * __wrap__build_simple_rel(PlannerInfo *root,
                                       int relid,
-                                      RelOptKind reloptkind);
+                                      BuildSimpleRelParam3 param3);
 
 RelOptInfo * __real__build_simple_rel(PlannerInfo *root,
                                       int relid,
-                                      RelOptKind reloptkind);
+                                      BuildSimpleRelParam3 param3);
 
 RelOptInfo * __wrap__build_empty_join_rel(PlannerInfo *root);
 RelOptInfo * __real__build_empty_join_rel(PlannerInfo *root);
