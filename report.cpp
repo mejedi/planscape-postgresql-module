@@ -72,12 +72,9 @@ report_relations(std::ostream &os, const InstrumentationContext &ic)
 
         Relation rel = heap_open(oid, NoLock);
 
-        std::string relation_name(get_namespace_name(RelationGetNamespace(rel)));
-        relation_name.append(".");
-        relation_name.append(RelationGetRelationName(rel));
-
-        os << ",\"name\":\"" << json_escape_string(relation_name);
-
+        os << ",\"name\":\"" << json_escape_string(RelationGetRelationName(rel));
+        os << "\",\"ns\":\"" << json_escape_string(get_namespace_name(
+                                                     RelationGetNamespace(rel)));
         os << "\",\"attrs\":[";
 
         const int n = RelationGetDescr(rel)->natts;
