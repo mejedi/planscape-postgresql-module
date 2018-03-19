@@ -31,7 +31,7 @@ static ProcessUtility_hook_type process_utility_hook_next = nullptr;
 
 // Activates certain additional functionality implemented by outNode
 // hook, used by capture_object().
-static bool inCaptureObject = false;
+static const void *inCaptureObject = nullptr;
 
 // Current instrumentation context, nullptr means instrumentation
 // inactive.
@@ -98,6 +98,8 @@ void __wrap__outNode(StringInfo str, const void *obj)
         return;
     }
 
+    const size_t len = str->len;
+
     __real__outNode(str, obj);
 
     if (str->data[str->len - 1] == '}' && str->data[str->len - 2] != '{') {
@@ -127,6 +129,16 @@ void __wrap__outNode(StringInfo str, const void *obj)
             pfree(result);
         }
         appendStringInfo(str, " :x-id %p}", obj);
+
+        // If object's string representation is large enough, store it
+        // in a separate sample and emit reference instead. Results in
+        // output compression for repeated objects.
+        if (str->len - len > 150 && inCaptureObject != obj) {
+            ic->samples.push_back(PgObject(obj, str->data + len));
+            ic->samples_index[obj] = ic->samples.size() - 1;
+            str->data[str->len = len] = '\0';
+            appendStringInfo(str, "{X-REF :x-id %p}", obj);
+        }
     }
 
     if (obj) sniff_object(reinterpret_cast<const Node *>(obj));
@@ -134,11 +146,11 @@ void __wrap__outNode(StringInfo str, const void *obj)
 
 static size_t do_capture_object(const void *p, PgObject **desc)
 {
-    inCaptureObject = true;
+    inCaptureObject = p;
 
     auto repr = nodeToString(p);
 
-    inCaptureObject = false;
+    inCaptureObject = nullptr;
 
     ic->samples.push_back(PgObject(p, repr));
 
