@@ -117,18 +117,35 @@ int regs_used(const hde64s *s)
 {
     int regs = 0;
 
+    // Better be safe than sorry
     if (s->flags & F_MODRM) {
-        int r1 = s->modrm_reg;
-        int r2 = s->modrm_rm;
-        if (s->flags & F_PREFIX_REX) {
-            r1 |= s->rex_r << 3;
-            r2 |= s->rex_b << 3;
-        }
-        regs |= (1 << r1);
-        regs |= (1 << r2);
+        regs |= (1 << (s->modrm_reg | (s->rex_r << 3)));
+        regs |= (1 << (s->modrm_rm | (s->rex_b << 3)));
     }
 
-    // TODO: instructions with reg being part of the opcode
+    // https://github.com/MahdiSafsafi/opcodesDB/blob/master/x86.pl
+    // instructions with reg being part of the opcode
+    int opcode_base;
+    switch (s->opcode) {
+    case 0xC8 ... 0xCF: // bswap
+        opcode_base = 0xC8;
+do_opcode_reg:
+        regs |= (1 << ((s->opcode - opcode_base) | (s->rex_b << 3)));
+        break;
+    case 0xB8 ... 0xBF: // mov
+        opcode_base = 0xB8;
+        goto do_opcode_reg;
+    case 0x58 ... 0x5F: // pop
+        opcode_base = 0x58;
+        goto do_opcode_reg;
+    case 0x50 ... 0x57: // push
+        opcode_base = 0x50;
+        goto do_opcode_reg;
+    case 0x90 ... 0x97: // xchg
+        opcode_base = 0x90;
+        goto do_opcode_reg;
+    }
+
     return regs;
 }
 
