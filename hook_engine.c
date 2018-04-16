@@ -63,11 +63,10 @@ void write_initial_jmp(struct Overlay *c, uintptr_t target)
 }
 
 static
-void write_jmp_or_call(uint8_t instr, struct Overlay *c, uintptr_t target, uintptr_t **jump_table)
+void write_jmp(struct Overlay *c, uintptr_t target, uintptr_t **jump_table)
 {
     // jmp  *jump_table(%rip)
-    // call *jump_table(%rip)
-    c->p[0] = instr;
+    c->p[0] = 0xff;
     c->p[1] = 0x25;
     put_uint32(c->p + 2, (uintptr_t)(*jump_table) - (c->target + overlay_size(c) + 6));
 
@@ -76,15 +75,17 @@ void write_jmp_or_call(uint8_t instr, struct Overlay *c, uintptr_t target, uintp
     (*jump_table)++;
 }
 
-static inline
-void write_jmp(struct Overlay *c, uintptr_t target, uintptr_t **jump_table)
+static
+void write_call(struct Overlay *c, uintptr_t target, uintptr_t **jump_table)
 {
-    write_jmp_or_call(0xFF, c, target, jump_table);
+    // call *jump_table(%rip)
+    write_jmp(c, target, jump_table);
+    c->p[-5] = 0x15;
 }
 
 // Patch function @fn, so that every time it is called, control is
 // transferred to @replacement.
-//  
+//
 // If @trampoline is provided, instructions destroyed in @fn are
 // transferred to @trampoline.
 int hook_install(void *fn, void *replacement, void *trampoline)
@@ -131,6 +132,13 @@ int hook_install(void *fn, void *replacement, void *trampoline)
         case 0xCC:
             // int3: this is probably a breakpoint set by a debugger
             return -1;
+
+        case 0xE8:
+            // relative call, 32 bit immediate offset
+            assert(s.flags & F_IMM32);
+            rip_dest = (uintptr_t)fn + disas_offset + (int32_t)s.imm.imm32;
+            write_call(&t_overlay, rip_dest, &jump_table);
+            goto check_rip_dest;
 
         case 0xE9:
             // relative jump, 8 bit immediate offset
