@@ -6,22 +6,25 @@ extern "C" {
 
 #ifdef __x86_64__
 
-// The longest instruction sequence we may emit to implement
-// unconditional jump.           (MOV %reg, imm64; JMP %reg;)
-#define JUMP_SEQUENCE_LEN     13
+// The length of a jump sequence a hooked function's code is clobbered
+// with.
+#define HOOK_INITIAL_JUMP_LEN 12
 
-// The length of instruction sequence destroyed while patching absolute
-// jump in.                      (JUMP_SEQUENCE_LEN + 1 following
-//                                partially destroyed instruction)
-#define CLOBBERED_CODE_LEN    (JUMP_SEQUENCE_LEN + 14)
+// The length of a jump sequence in trampoline's body. This is different
+// from HOOK_INITIAL_JUMP_LEN since we can't clobber registers.
+#define HOOK_JUMP_LEN         6
 
-// Maximum number of Jcc-s opcodes we may have to evacuate.
-// Jcc-s are special, since we have to emit a jump sequence for each one
-// of them.
-#define JCC_MAX               (JUMP_SEQUENCE_LEN/2 + 1)
+// Max length of the code clobbered in a hooked functions (account for a
+// partially clobbered following instructions, max instruction length in
+// x86_64 is 15).
+#define HOOK_CLOBBERED_LEN    (HOOK_INITIAL_JUMP_LEN + 14)
+
+// Maximum number of jumps/calls in a trampoline body (shortest
+// jump/call instruction in x86_64 is 2 bytes long).
+#define HOOK_JUMP_MAX         (HOOK_INITIAL_JUMP_LEN/2 + 1)
 
 // Maximum size of trampoline code.
-#define TRAMPOLINE_LEN        (CLOBBERED_CODE_LEN + JCC_MAX * JUMP_SEQUENCE_LEN)
+#define HOOK_TRAMPOLINE_LEN   (HOOK_CLOBBERED_LEN + HOOK_JUMP_MAX * HOOK_JUMP_LEN)
 
 // Define trampoline function. Merely reserves bytes in .code section.
 // These bytes are to be later patched by hook_install().
@@ -30,7 +33,13 @@ extern "C" {
 // int my_trampoline(int param);
 // HOOK_DEFINE_TRAMPOLINE(my_trampoline);
 #define HOOK_DEFINE_TRAMPOLINE(name) \
-__asm__(".globl " HOOK_S(name) "\n" HOOK_S(name) ":\n\t.skip " HOOK_S(TRAMPOLINE_LEN) ", 0xcc\n")
+__asm__(".globl " HOOK_S(name) "\n" \
+        HOOK_S(name) ":\n" \
+        "\t.skip " HOOK_S(HOOK_TRAMPOLINE_LEN) ", 0xcc\n" \
+        "\tleaq _J_" HOOK_S(name) "(%rip), %rax;\n" \
+        "\tret\n" \
+        ".local _J_" HOOK_S(name) "\n" \
+        ".comm _J_" HOOK_S(name) ", " HOOK_S(HOOK_JUMP_MAX*8) ", 8\n")
 
 #else
 #error Unsupported ARCH :(
