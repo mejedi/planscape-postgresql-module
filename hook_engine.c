@@ -105,27 +105,25 @@ int hook_install(void *fn, void *replacement, void *trampoline)
     // macro; after TRAMPOLINE_LEN area, there's a code sequence
     // returning a pointer to a per-trampoline jump table
     if (trampoline)
-        jump_table = ((uint64_t * (*)(void))((uintptr_t)trampoline + HOOK_TRAMPOLINE_LEN))();
+        jump_table = ((uint64_t*(*)(void)) ((uintptr_t)trampoline + HOOK_TRAMPOLINE_LEN)) ();
 
     // Prepare code to overwrite @fn with. This will be JMP @replacement.
     write_initial_jmp(&fn_overlay, (uintptr_t)replacement);
 
-    // Detect jumps into the code range we overwrite.
-    const uintptr_t rip_hazard = (uintptr_t)fn + overlay_size(&fn_overlay);
-
     // @fn is going to be partially clobbered. Disassemble and evacuate
     // some instructions.
-    size_t disas_offset = 0;
-    while (disas_offset < overlay_size(&fn_overlay)) {
+    uintptr_t rip = (uintptr_t)fn;
+    const uintptr_t rip_hazzard = rip + overlay_size(&fn_overlay);
 
-        const uint8_t *i = (const uint8_t *)fn + disas_offset;
+    while (rip < rip_hazzard) {
+
         hde64s s;
-
-        hde64_disasm(i, &s);
-        if (s.flags & F_ERROR) return -1;
-        disas_offset += s.len;
-
         uintptr_t rip_dest = UINTPTR_MAX;
+
+        hde64_disasm((const uint8_t *)rip, &s);
+        if (s.flags & F_ERROR) return -1;
+
+        rip += s.len;
 
         switch (s.opcode) {
 
@@ -136,21 +134,21 @@ int hook_install(void *fn, void *replacement, void *trampoline)
         case 0xE8:
             // relative call, 32 bit immediate offset
             assert(s.flags & F_IMM32);
-            rip_dest = (uintptr_t)fn + disas_offset + (int32_t)s.imm.imm32;
+            rip_dest = rip + (int32_t)s.imm.imm32;
             write_call(&t_overlay, rip_dest, &jump_table);
             goto check_rip_dest;
 
         case 0xE9:
             // relative jump, 8 bit immediate offset
             assert(s.flags & F_IMM8);
-            rip_dest = (uintptr_t)fn + disas_offset + (int8_t)s.imm.imm8;
+            rip_dest = rip + (int8_t)s.imm.imm8;
             write_jmp(&t_overlay, rip_dest, &jump_table);
             goto check_rip_dest;
 
         case 0xEB:
             // relative jump, 32 bit immediate offset
             assert(s.flags & F_IMM32);
-            rip_dest = (uintptr_t)fn + disas_offset + (int32_t)s.imm.imm32;
+            rip_dest = rip + (int32_t)s.imm.imm32;
             write_jmp(&t_overlay, rip_dest, &jump_table);
             goto check_rip_dest;
 
@@ -161,7 +159,7 @@ int hook_install(void *fn, void *replacement, void *trampoline)
         case 0x70 ... 0x7f:
             // Jcc jump, 8 bit immediate offset
             assert(s.flags & F_IMM8);
-            rip_dest = (uintptr_t)fn + disas_offset + (int8_t)s.imm.imm8;
+            rip_dest = rip + (int8_t)s.imm.imm8;
 
             t_overlay.p[0] = s.opcode ^ 1;
             t_overlay.p[1] = 6;
@@ -174,7 +172,7 @@ int hook_install(void *fn, void *replacement, void *trampoline)
             if (s.opcode2 >= 0x80 && s.opcode2 <= 0x8F) {
                 // Jcc jump, 32 bit immediate offset
                 assert(s.flags & F_IMM32);
-                rip_dest = (uintptr_t)fn + disas_offset + (int32_t)s.imm.imm32;
+                rip_dest = rip + (int32_t)s.imm.imm32;
 
                 // Convert to a shorter form
                 t_overlay.p[0] = (s.opcode2 - 0x10) ^ 1;
@@ -198,32 +196,32 @@ int hook_install(void *fn, void *replacement, void *trampoline)
             // Convert to MOV
             t_overlay.p[0] = 0x48 + s.rex_r;
             t_overlay.p[1] = 0xB8 + s.modrm_reg;
-            put_uint64(t_overlay.p + 2, (uintptr_t)fn + disas_offset + (int32_t)s.disp.disp32);
+            put_uint64(t_overlay.p + 2, rip + (int32_t)s.disp.disp32);
             t_overlay.p += 10;
 
             continue;
         }
 
         // Copy instruction
-        memcpy(t_overlay.p, i, s.len);
+        memcpy(t_overlay.p, (const uint8_t *)rip - s.len, s.len);
         t_overlay.p += s.len;
         continue;
 
 check_rip_dest:
         // If we've seen a jump into the range we are about to overwrite,
         // this isn't going to work.
-        if (rip_dest >= (uintptr_t)fn && rip_dest < rip_hazard)
+        if (rip_dest >= (uintptr_t)fn && rip_dest < rip_hazzard)
             return -1;
     }
 
     // If we've clobbered a *part* of an instruction, we should beter
     // int3 the surviving part.
-    size_t partially_clobbered = disas_offset - overlay_size(&fn_overlay);
+    size_t partially_clobbered = rip - rip_hazzard;
     memset(fn_overlay.p, 0xcc, partially_clobbered);
     fn_overlay.p += partially_clobbered;
 
     // Connect trampoline to the unclobbered part of @fn.
-    write_jmp(&t_overlay, (uintptr_t)fn + disas_offset, &jump_table);
+    write_jmp(&t_overlay, rip, &jump_table);
 
     // Now actually owerwrite things.
     int mem_fd = g_mem_fd;
