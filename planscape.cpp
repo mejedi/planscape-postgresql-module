@@ -18,6 +18,7 @@ void _PG_init();
 }
 
 #include "pg_hooks.h"
+#include "hook_engine.h"
 #include "instrumentation_context.h"
 #include <sys/stat.h>
 #include <inttypes.h>
@@ -365,7 +366,7 @@ static void process_utility(
                 ereport(ERROR,
                         (errcode(ERRCODE_SYSTEM_ERROR),
                 errmsg("failed to install PLANSCAPE hooks"),
-                errhint("a possible cause may be a debugger attached")));
+                errhint("%s", hook_last_error())));
             }
 
             icontext = create_instrumentation_context(queryString);
