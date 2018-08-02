@@ -369,7 +369,7 @@ static void process_utility(
                 errhint("%s", hook_last_error())));
             }
 
-            icontext = create_instrumentation_context(queryString);
+            icontext = create_instrumentation_context();
         }
 
         auto * const ic_prev = ic;

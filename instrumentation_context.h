@@ -26,7 +26,6 @@ struct PgObject
 
 struct InstrumentationContext
 {
-    std::string                                query;
     std::unordered_map<const void *, size_t>   samples_index;
     std::vector<PgObject>                      samples;
     std::unordered_set<Oid>                    types;
@@ -37,7 +36,7 @@ struct InstrumentationContext
 void clear_instrumentation_context(InstrumentationContext &ic);
 
 std::unique_ptr<InstrumentationContext>
-create_instrumentation_context(const char *query);
+create_instrumentation_context();
 
 void make_report(std::ostream &os, const InstrumentationContext &ic);
 
@@ -45,7 +44,6 @@ std::string submit_report(const InstrumentationContext &ic, const char *url);
 
 inline void clear_instrumentation_context(InstrumentationContext &ic)
 {
-    // Don't reset .query!
     ic.samples_index.clear();
     ic.samples.clear();
     ic.types.clear();
@@ -54,9 +52,8 @@ inline void clear_instrumentation_context(InstrumentationContext &ic)
 }
 
 inline std::unique_ptr<InstrumentationContext>
-create_instrumentation_context(const char *query)
+create_instrumentation_context()
 {
     auto ic = std::make_unique<InstrumentationContext>();
-    ic->query = query;
     return ic;
 }

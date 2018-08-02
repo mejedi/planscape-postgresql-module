@@ -216,9 +216,7 @@ report_operators(std::ostream &os, const InstrumentationContext &ic)
 
 void make_report(std::ostream &os, const InstrumentationContext &ic)
 {
-    os << "{\"query\":\"" << json_escape_string(ic.query) << '"';
-
-    os << ",\"samples\":";
+    os << "{\"samples\":";
     report_samples(os, ic);
 
     os << ",\"relations\":";
